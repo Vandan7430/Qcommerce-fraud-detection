@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# Replace with your deployed API URL
-API_URL = "https://<your-render-api-url>.onrender.com/predict"
+# Live Render API URL
+API_URL = "https://qcommerce-fraud-api.onrender.com/predict"
 
 st.set_page_config(page_title="Q-Commerce Fraud Detection", page_icon="🛒", layout="centered")
 
