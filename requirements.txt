@@ -8,3 +8,4 @@ pydantic
 streamlit
 imbalanced-learn
 nbformat
+requests
