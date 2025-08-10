@@ -1,76 +1,54 @@
 import os
 import joblib
 import pandas as pd
-import numpy as np
-from fastapi import FastAPI
-from pydantic import BaseModel
-from sklearn.ensemble import RandomForestClassifier
+from fastapi import FastAPI, HTTPException
 
-MODEL_PATH = "models/fraud_model_rf.pkl"
-DATA_PATH = "data/synthetic_qcommerce_orders.csv"
-
-# Ensure models directory exists
-os.makedirs("models", exist_ok=True)
-
-def train_model():
-    print("Training new model from CSV...")
-    df = pd.read_csv(DATA_PATH)
-
-    # If 'fraudulent' column is missing, create it with random labels
-    if "fraudulent" not in df.columns:
-        print("⚠ 'fraudulent' column missing. Creating random labels for demo...")
-        df["fraudulent"] = np.random.randint(0, 2, size=len(df))
-
-    # Prepare features and labels
-    X = pd.get_dummies(df.drop("fraudulent", axis=1), drop_first=True)
-    y = df["fraudulent"]
-
-    # Train model
-    model = RandomForestClassifier()
-    model.fit(X, y)
-
-    # Save model and return
-    joblib.dump(model, MODEL_PATH)
-    print("✅ Model trained and saved.")
-    return model, X.columns
-
-# Load or train model
-if os.path.exists(MODEL_PATH):
-    model = joblib.load(MODEL_PATH)
-    df = pd.read_csv(DATA_PATH)
-
-    if "fraudulent" not in df.columns:
-        df["fraudulent"] = np.random.randint(0, 2, size=len(df))
-
-    feature_columns = pd.get_dummies(df.drop("fraudulent", axis=1), drop_first=True).columns
-else:
-    model, feature_columns = train_model()
-
-# FastAPI app
 app = FastAPI()
 
-class OrderData(BaseModel):
-    city: str
-    order_amount: float
-    items_count: int
-    payment_mode: str
-    time_of_day: str
-    past_fraudulent_orders: int
+model_path = "models/fraud_model_rf.pkl"
+features_path = "models/feature_columns.pkl"
 
-@app.post("/predict")
-def predict(data: OrderData):
-    df_input = pd.DataFrame([data.dict()])
-    df_input = pd.get_dummies(df_input, drop_first=True)
-
-    # Add missing columns
-    for col in feature_columns:
-        if col not in df_input.columns:
-            df_input[col] = 0
-    df_input = df_input[feature_columns]
-
-    prediction = model.predict(df_input)[0]
-    return {"fraudulent": int(prediction)}
+# Load model and features if available
+if os.path.exists(model_path) and os.path.exists(features_path):
+    model = joblib.load(model_path)
+    feature_columns = joblib.load(features_path)
+    print("✅ Model and feature columns loaded successfully.")
+else:
+    model = None
+    feature_columns = None
+    print("⚠️ Warning: Model files not found. API will not be able to make predictions.")
 
 @app.get("/")
-def home():
-    return {"message": "Q-Commerce Fraud Detection API is running."}
+def root():
+    return {"message": "Q-Commerce Fraud Detection API is running"}
+
+@app.post("/predict")
+def predict(data: dict):
+    """
+    Example request:
+    {
+        "order_value": 250,
+        "payment_mode": "CARD",
+        "delivery_distance_km": 5,
+        "delivery_time_minutes": 30,
+        "user_order_count": 10,
+        "user_avg_order_value": 200
+    }
+    """
+    if model is None or feature_columns is None:
+        raise HTTPException(status_code=500, detail="Model not available. Please upload model files.")
+
+    try:
+        # Convert input to DataFrame
+        df = pd.DataFrame([data])
+
+        # One-hot encode and align with training features
+        df = pd.get_dummies(df)
+        df = df.reindex(columns=feature_columns, fill_value=0)
+
+        # Make prediction
+        prediction = model.predict(df)[0]
+        return {"fraudulent": bool(prediction)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
